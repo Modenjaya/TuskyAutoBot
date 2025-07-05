@@ -852,7 +852,7 @@ function updateStatus() {
 async function updateWallets() {
   const walletData = await updateWalletData();
   const header = `${chalk.bold.cyan("Address")}`;
-  const separator = chalk.gray("-".repeat(30)};
+  const separator = chalk.gray("-".repeat(30));
   try {
     walletBox.setItems([header, separator, ...walletData]);
     // Pilih item yang sesuai dengan selectedWalletIndex, dengan offset 2 untuk header dan separator

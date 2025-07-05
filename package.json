@@ -1,7 +1,7 @@
 {
-  "name": "tusky-auto-bot",
+  "name": "tusky-testnet-auto-upload",
   "version": "1.0.0",
-  "description": "Automated image upload bot for Tusky platform",
+  "description": "Automated image upload bot for Tusky testnet platform",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,21 +10,23 @@
   "keywords": [
     "tusky",
     "sui",
+    "testnet",
     "automation",
     "bot"
   ],
   "author": "SOUIY",
-  "license": "MIT",
+  "license": "ISC",
   "dependencies": {
-    "@mysten/sui.js": "^0.42.0",
-    "axios": "^1.6.2",
+    "@mysten/sui.js": "^0.54.1",
+    "axios": "^1.8.4",
     "blessed": "^0.1.81",
-    "chalk": "^5.3.0",
-    "figlet": "^1.7.0",
-    "https-proxy-agent": "^7.0.2",
-    "socks-proxy-agent": "^8.0.2"
+    "chalk": "^5.4.1",
+    "figlet": "^1.8.1",
+    "https-proxy-agent": "^7.0.6",
+    "socks-proxy-agent": "^8.0.5",
+    "uuid": "^11.1.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=16.0.0"
   }
 }

@@ -53,9 +53,7 @@ npm install
 ### 3. Persiapan File Konfigurasi
 Buat file `seed.txt` yang berisi seed phrase akun SUI Anda (satu seed phrase per baris):
 ```
-seed phrase akun 1
-seed phrase akun 2
-...
+seed.txt
 ```
 
 Opsional: Buat file `proxy.txt` untuk menggunakan proxy (satu proxy per baris, format: `socks://ip:port` atau `http://ip:port`):

@@ -8,13 +8,10 @@ import axios from "axios";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
-// Konstanta
 const API_BASE_URL = "https://dev-api.tusky.io";
 const CONFIG_FILE = "config.json";
 const SEED_FILE = "seed.txt";
-const RPC_URL = getFullnodeUrl('testnet'); // Menggunakan testnet sebagai default, bisa diubah jika perlu
 
-// Variabel Global
 let walletInfo = {
   address: "N/A",
   activeAccount: "N/A",
@@ -36,10 +33,9 @@ let spinnerIndex = 0;
 let isHeaderRendered = false;
 let activeProcesses = 0;
 let accountTokens = {};
-let uploadConfig = { uploadCount: 3 }; // Default upload count
+let uploadConfig = { uploadCount: 3 };
 let cycleTimeout = null;
 
-// Data untuk menghasilkan nama file acak
 const photoAdjectives = [
   "sunset", "ocean", "mountain", "forest", "sky", "river", "cloud", "dawn", "twilight", "horizon",
   "serene", "vibrant", "misty", "golden", "crimson", "azure", "emerald", "sapphire", "radiant", "tranquil"
@@ -52,8 +48,6 @@ const photoVerbs = [
   "capture", "reflect", "illuminate", "glisten", "shine", "glow", "sparkle", "drift", "flow", "rise",
   "set", "dance", "whisper", "embrace", "bathe", "kiss", "caress", "paint", "etch", "frame"
 ];
-
-// --- Fungsi Utilitas ---
 
 function getRandomString(length = 5) {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -96,14 +90,13 @@ function saveConfig() {
   }
 }
 
-// Penanganan Error Global
 process.on("unhandledRejection", (reason, promise) => {
   addLog(`Unhandled Rejection at: ${promise}, reason: ${reason}`, "error");
 });
 
 process.on("uncaughtException", (error) => {
   addLog(`Uncaught Exception: ${error.message}`, "error");
-  // process.exit(1); // Nonaktifkan ini agar UI tidak langsung tertutup
+  process.exit(1);
 });
 
 function getShortAddress(address) {
@@ -146,7 +139,7 @@ function addLog(message, type = "info") {
 
 function clearTransactionLogs() {
   transactionLogs = [];
-  logBox.setItems([]); // Clear existing items
+  logBox.setContent('');
   logBox.scrollTo(0);
   addLog("Transaction logs cleared.", "success");
 }
@@ -225,10 +218,9 @@ async function getClientWithProxy(proxyUrl) {
     const agent = createAgent(proxyUrl);
     const client = new SuiClient({
       url: RPC_URL,
-      // @ts-ignore
       transport: agent ? { agent } : undefined
     });
-    await client.getChainIdentifier(); // Cek koneksi
+    await client.getChainIdentifier();
     return client;
   } catch (error) {
     addLog(`Failed to initialize client with proxy: ${error.message}`, "error");
@@ -274,27 +266,23 @@ async function makeApiRequest(method, url, data, proxyUrl, customHeaders = {}, m
           data,
           headers,
           ...(agent ? { httpsAgent: agent, httpAgent: agent } : {}),
-          timeout: 10000 // 10 detik timeout
+          timeout: 10000
         };
         const response = await axios(config);
         return response.data;
       } catch (error) {
         let errorMessage = `Attempt ${attempt}/${maxRetries} failed for API request to ${url}`;
         if (error.response) errorMessage += `: HTTP ${error.response.status} - ${JSON.stringify(error.response.data || error.response.statusText)}`;
-        else if (error.request) errorMessage += `: No response received (likely network error or timeout)`;
+        else if (error.request) errorMessage += `: No response received`;
         else errorMessage += `: ${error.message}`;
         addLog(errorMessage, "error");
         if (attempt < maxRetries) {
-          addLog(`Retrying API request in ${retryDelay / 1000} seconds...`, "wait");
+          addLog(`Retrying API request in ${retryDelay/1000} seconds...`, "wait");
           await sleep(retryDelay);
-        } else {
-          // Setelah retries habis, throw error agar ditangani oleh pemanggil
-          throw new Error(`Failed after ${maxRetries} attempts: ${errorMessage}`);
         }
       }
     }
-    // Ini seharusnya tidak tercapai karena error akan dilempar di atas
-    throw new Error(`Unexpected exit from makeApiRequest for ${url}`);
+    throw new Error(`Failed to make API request to ${url} after ${maxRetries} attempts`);
   } finally {
     activeProcesses = Math.max(0, activeProcesses - 1);
   }
@@ -316,14 +304,12 @@ async function getFolderId(vaultId, proxyUrl, token) {
     const foldersUrl = `${API_BASE_URL}/folders?vaultId=${vaultId}&parentId=${vaultId}&limit=80`;
     const response = await makeApiRequest("get", foldersUrl, null, proxyUrl, getHeaders(token));
     if (response.items && response.items.length > 0) {
-      // Mengambil folder pertama jika ada sub-folder
       return response.items[0].id;
     }
-    // Jika tidak ada sub-folder, gunakan vaultId sebagai parentId
     return vaultId;
   } catch (error) {
     addLog(`Failed to fetch folders for vault ${getShortId(vaultId)}: ${error.message}`, "error");
-    return vaultId; // Kembali ke vaultId jika gagal
+    return vaultId;
   }
 }
 
@@ -333,7 +319,7 @@ function generateUploadMetadata(vaultId, parentId, filename, fileType, imageSize
     parentId: Buffer.from(parentId).toString("base64"),
     name: filename,
     type: Buffer.from(fileType).toString("base64"),
-    filetype: Buffer.from(fileType).toString("base64"), // Duplikasi tapi sering ada di header Tus
+    filetype: Buffer.from(fileType).toString("base64"),
     filename: Buffer.from(filename).toString("base64"),
     numberOfChunks: Buffer.from("1").toString("base64"),
     chunkSize: Buffer.from(imageSize.toString()).toString("base64")
@@ -357,7 +343,7 @@ async function updateWalletData() {
     }
   });
   const walletData = await Promise.all(walletDataPromises);
-  // addLog("Wallet data updated.", "success"); // Log ini bisa terlalu sering
+  addLog("Wallet data updated.", "success");
   return walletData;
 }
 
@@ -370,17 +356,17 @@ async function loginAccount(keypair, proxyUrl) {
     const challengeUrl = `${API_BASE_URL}/auth/create-challenge`;
     const challengePayload = { address: address };
     const challengeResponse = await makeApiRequest("post", challengeUrl, challengePayload, proxyUrl, getHeaders());
-
+    
     if (!challengeResponse || !challengeResponse.nonce) {
       throw new Error("Invalid challenge response: No nonce received");
     }
     const nonce = challengeResponse.nonce;
-
+    
     const message = `tusky:connect:${nonce}`;
     const messageBytes = new TextEncoder().encode(message);
     const signatureObj = await keypair.signPersonalMessage(messageBytes);
     const signature = signatureObj.signature;
-
+    
     const verifyUrl = `${API_BASE_URL}/auth/verify-challenge`;
     const verifyPayload = {
       address: address,
@@ -401,16 +387,15 @@ async function loginAccount(keypair, proxyUrl) {
 }
 
 async function generateRandomImage() {
-  // Gunakan ukuran yang lebih kecil untuk pengujian dan kecepatan
   const randomSeed = Math.floor(Math.random() * 100000);
-  const imageUrl = `https://picsum.photos/seed/${randomSeed}/50/50`; // Gambar 50x50 piksel
+  const imageUrl = `https://picsum.photos/seed/${randomSeed}/500/500`;
   const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
   return imageResponse.data;
 }
 
 async function autoUpload() {
   if (keypairs.length === 0) {
-    addLog("No valid seed phrases found. Please check seed.txt.", "error");
+    addLog("No valid seed phrases found.", "error");
     return;
   }
   addLog(`Starting Auto Upload for ${keypairs.length} accounts with ${uploadConfig.uploadCount} uploads each.`, "info");
@@ -427,13 +412,11 @@ async function autoUpload() {
       const keypair = keypairs[accountIndex];
       const address = keypair.getPublicKey().toSuiAddress();
       addLog(`Processing account ${accountIndex + 1}: ${getShortAddress(address)} (${proxyInfo}).`, "info");
-      await updateWallets(); // Update UI dengan akun yang sedang diproses
+      await updateWallets();
 
       const loginSuccess = await loginAccount(keypair, proxyUrl);
       if (!loginSuccess) {
         addLog(`Account ${accountIndex + 1}: Skipping upload due to login failure.`, "error");
-        // Beri jeda singkat sebelum mencoba akun berikutnya jika login gagal
-        await sleep(2000);
         continue;
       }
 
@@ -442,39 +425,17 @@ async function autoUpload() {
         try {
           const vaultsUrl = `${API_BASE_URL}/vaults?status=active&limit=1000`;
           const vaultsResponse = await makeApiRequest("get", vaultsUrl, null, proxyUrl, getHeaders(accountTokens[address]));
-
-          // --- DEBUGGING LOGGING START ---
-          if (!vaultsResponse) {
-            addLog(`DEBUG: Account ${accountIndex + 1}: Vaults API returned no response for vaults list.`, "error");
-            addLog(`Account ${accountIndex + 1}: Skipping upload for this account due to missing vaults response.`, "error");
-            break; // Keluar dari loop upload untuk akun ini
-          }
-          if (!vaultsResponse.items) {
-            addLog(`DEBUG: Account ${accountIndex + 1}: Vaults API response missing 'items' property. Raw response: ${JSON.stringify(vaultsResponse)}`, "error");
-            addLog(`Account ${accountIndex + 1}: Skipping upload for this account due to invalid vaults response structure.`, "error");
-            break; // Keluar dari loop upload untuk akun ini
-          }
-          addLog(`DEBUG: Account ${accountIndex + 1}: Raw Vaults Response Items: ${JSON.stringify(vaultsResponse.items, null, 2)}`, "info");
-          // --- DEBUGGING LOGGING END ---
-
-          const vaults = vaultsResponse.items.filter(vault => {
-            // --- DEBUGGING LOGGING INDIVIDUAL VAULT ---
-            addLog(`DEBUG: Checking vault ID ${getShortId(vault.id)} (name: ${vault.name || 'N/A'}) - encrypted: ${vault.encrypted}`, "delay");
-            // --- DEBUGGING LOGGING END ---
-            return vault.encrypted === false;
-          });
-
+          const vaults = vaultsResponse.items.filter(vault => vault.encrypted === false);
           if (!vaults || vaults.length === 0) {
-            addLog(`Account ${accountIndex + 1}: No unencrypted vaults available after filtering. Total vaults retrieved: ${vaultsResponse.items.length} from API.`, "error");
-            break; // Keluar dari loop upload untuk akun ini karena tidak ada vault yang bisa digunakan
+            addLog(`Account ${accountIndex + 1}: No unencrypted vaults available.`, "error");
+            break;
           }
           addLog(`Account ${accountIndex + 1}: Found ${vaults.length} unencrypted vaults.`, "info");
 
           let availableVaults = vaults.filter(vault => !usedVaultIds.includes(vault.id));
           if (availableVaults.length === 0) {
-            usedVaultIds = []; // Reset jika semua vault sudah digunakan di siklus ini
+            usedVaultIds = [];
             availableVaults = vaults;
-            addLog(`Account ${accountIndex + 1}: All vaults used, resetting selection for next upload.`, "info");
           }
 
           const randomVault = availableVaults[Math.floor(Math.random() * availableVaults.length)];
@@ -482,7 +443,7 @@ async function autoUpload() {
           const vaultName = randomVault.name || getShortId(vaultId);
           usedVaultIds.push(vaultId);
           const parentId = await getFolderId(vaultId, proxyUrl, accountTokens[address]);
-          addLog(`Account ${accountIndex + 1}: Selected Vault ${vaultName} (${getShortId(vaultId)}) for image ${i + 1}.`, "info");
+          addLog(`Account ${accountIndex + 1}: Selected Vault ${vaultName} For image ${i + 1}.`, "info");
 
           const imageBuffer = await generateRandomImage();
           const filename = getFilename();
@@ -499,31 +460,27 @@ async function autoUpload() {
             "accept": "*/*",
             "content-length": imageBuffer.length.toString()
           };
-          addLog(`Account ${accountIndex + 1}: Attempting to upload image ${i + 1} (${filename})...`, "info");
           const uploadResponse = await makeApiRequest("post", uploadUrl, imageBuffer, proxyUrl, uploadHeaders);
-          
-          if (uploadResponse && uploadResponse.uploadId) {
+          if (uploadResponse.uploadId) {
             addLog(`Account ${accountIndex + 1}: Image ${i + 1} uploaded successfully. ID: ${getShortId(uploadResponse.uploadId)}`, "success");
-            await sleep(2000); // Tunggu sebentar sebelum memverifikasi
+            await sleep(2000);
             const files = await listFilesInVault(vaultId, parentId, proxyUrl, accountTokens[address]);
             if (files.some(file => file.name === filename)) {
               addLog(`Account ${accountIndex + 1}: Image ${i + 1} confirmed in vault ${vaultName} with name ${filename}`, "success");
             } else {
-              addLog(`Account ${accountIndex + 1}: Image ${i + 1} not immediately found in vault ${vaultName}. May take time to process.`, "wait");
+              addLog(`Account ${accountIndex + 1}: Image ${i + 1} not found in vault ${vaultName}.`, "error");
             }
           } else {
-            addLog(`Account ${accountIndex + 1}: Image ${i + 1} upload failed. No uploadId received from API.`, "error");
+            addLog(`Account ${accountIndex + 1}: Image ${i + 1} upload failed. No uploadId received.`, "error");
           }
 
           if (i < uploadConfig.uploadCount - 1 && !shouldStop) {
             const delay = getRandomDelay(4000, 10000);
-            addLog(`Account ${accountIndex + 1}: Waiting ${(delay / 1000).toFixed(2)} seconds before next upload...`, "delay");
+            addLog(`Account ${accountIndex + 1}: Waiting ${(delay/1000).toFixed(2)} seconds before next upload...`, "delay");
             await sleep(delay);
           }
         } catch (error) {
           addLog(`Account ${accountIndex + 1}: Image ${i + 1} upload error: ${error.message}`, "error");
-          // Beri jeda singkat jika terjadi error upload
-          await sleep(3000);
         }
       }
 
@@ -537,17 +494,14 @@ async function autoUpload() {
       addLog("Satukan Solidaritas Bantu Palestina!.", "success");
       addLog("https://digital.dompetdhuafa.org/donasi/jagapalestina", "success");
 
-      // Set timeout untuk siklus berikutnya
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      walletInfo.nextCycle = new Date(Date.now() + twentyFourHours).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta" });
-      cycleTimeout = setTimeout(autoUpload, twentyFourHours);
-      activityRunning = false; // Tidak ada aktivitas upload aktif, tapi siklus berjalan
+      cycleTimeout = setTimeout(autoUpload, 24 * 60 * 60 * 1000);
+      activityRunning = false;
       isCycleRunning = true;
       updateStatus();
       safeRender();
     }
   } catch (error) {
-    addLog(`Auto upload process failed: ${error.message}`, "error");
+    addLog(`Auto upload failed: ${error.message}`, "error");
     activityRunning = false;
     isCycleRunning = false;
     shouldStop = false;
@@ -559,7 +513,6 @@ async function autoUpload() {
     updateStatus();
     safeRender();
   } finally {
-    // Ini menangani kasus jika shouldStop disetel saat ada proses aktif
     if (shouldStop && activeProcesses <= 0) {
       activityRunning = false;
       isCycleRunning = false;
@@ -576,15 +529,13 @@ async function autoUpload() {
   }
 }
 
-// --- Blessed UI Setup ---
-
 const screen = blessed.screen({
   smartCSR: true,
   title: "TUSKY AUTO UPLOAD BOT",
   autoPadding: true,
   fullUnicode: true,
   mouse: true,
-  ignoreLocked: ["C-c", "q", "escape"] // Tambahkan key escape untuk keluar
+  ignoreLocked: ["C-c", "q", "escape"]
 });
 
 const headerBox = blessed.box({
@@ -633,14 +584,14 @@ const logBox = blessed.log({
   top: 9,
   left: "41%",
   width: "60%",
-  height: "100%-9", // Sesuaikan agar memenuhi sisa tinggi
+  height: "100%-9",
   border: { type: "line" },
   scrollable: true,
   alwaysScroll: true,
   mouse: true,
   tags: true,
   scrollbar: { ch: "│", style: { bg: "cyan", fg: "white" }, track: { bg: "gray" } },
-  scrollback: 100, // Jumlah baris log yang disimpan
+  scrollback: 100,
   smoothScroll: true,
   style: { border: { fg: "magenta" }, bg: "default", fg: "white" },
   padding: { left: 1, right: 1, top: 0, bottom: 0 },
@@ -651,10 +602,10 @@ const logBox = blessed.log({
 
 const menuBox = blessed.list({
   label: " Menu ",
-  top: "44%", // Di bawah walletBox
+  top: "44%",
   left: 0,
   width: "40%",
-  height: "56%", // Sisa tinggi di sisi kiri
+  height: "56%",
   keys: true,
   vi: true,
   mouse: true,
@@ -748,7 +699,6 @@ const configSubmitButton = blessed.button({
   }
 });
 
-// --- Appending elements to screen ---
 screen.append(headerBox);
 screen.append(statusBox);
 screen.append(walletBox);
@@ -757,7 +707,6 @@ screen.append(menuBox);
 screen.append(uploadConfigSubMenu);
 screen.append(configForm);
 
-// --- Rendering & Layout ---
 let renderQueue = [];
 let isRendering = false;
 function safeRender() {
@@ -770,18 +719,16 @@ function safeRender() {
         figlet.text("SOUIY", { font: "ANSI Shadow" }, (err, data) => {
           if (!err) headerBox.setContent(`{center}{bold}{cyan-fg}${data}{/cyan-fg}{/bold}{/center}`);
           isHeaderRendered = true;
-          screen.render(); // Render ulang setelah header disetel
         });
-      } else {
-        screen.render();
       }
+      screen.render();
     } catch (error) {
       addLog(`UI render error: ${error.message}`, "error");
     }
     renderQueue.shift();
     isRendering = false;
     if (renderQueue.length > 0) safeRender();
-  }, 50); // Sedikit penundaan untuk menghindari flicker berlebihan
+  }, 100);
 }
 
 function adjustLayout() {
@@ -798,12 +745,12 @@ function adjustLayout() {
 
   logBox.top = headerBox.height + statusBox.height;
   logBox.left = Math.floor(screenWidth * 0.41);
-  logBox.width = Math.max(1, screenWidth - logBox.left); // Pastikan width minimal 1
+  logBox.width = Math.floor(screenWidth * 0.6);
   logBox.height = screenHeight - (headerBox.height + statusBox.height);
 
   menuBox.top = headerBox.height + statusBox.height + walletBox.height;
   menuBox.width = Math.floor(screenWidth * 0.4);
-  menuBox.height = Math.max(1, screenHeight - (headerBox.height + statusBox.height + walletBox.height));
+  menuBox.height = screenHeight - (headerBox.height + statusBox.height + walletBox.height);
 
   uploadConfigSubMenu.top = menuBox.top;
   uploadConfigSubMenu.width = menuBox.width;
@@ -811,39 +758,31 @@ function adjustLayout() {
   uploadConfigSubMenu.left = menuBox.left;
   configForm.width = Math.floor(screenWidth * 0.3);
   configForm.height = Math.floor(screenHeight * 0.4);
-  configForm.left = Math.floor((screenWidth - configForm.width) / 2);
-  configForm.top = Math.floor((screenHeight - configForm.height) / 2);
 
   safeRender();
 }
 
 function updateStatus() {
   const isProcessing = activityRunning || isCycleRunning;
-  let statusTextIndicator;
-  if (activityRunning) {
-    statusTextIndicator = `${loadingSpinner[spinnerIndex]} ${chalk.yellowBright("Running")}`;
-  } else if (isCycleRunning) {
-    statusTextIndicator = `${loadingSpinner[spinnerIndex]} ${chalk.yellowBright("Waiting for next cycle")}`;
-  } else {
-    statusTextIndicator = chalk.green("Idle");
-  }
-
-  const nextCycleTime = cycleTimeout ? walletInfo.nextCycle : "N/A";
-  const statusContent = `Status: ${statusTextIndicator} | Active Account: ${walletInfo.activeAccount} | Total Accounts: ${keypairs.length} | Uploads per Account: ${uploadConfig.uploadCount} | Next Cycle: ${nextCycleTime} | Follow Tiktok : AirdropRefferal (Souiy1)`;
+  const status = activityRunning
+    ? `${loadingSpinner[spinnerIndex]} ${chalk.yellowBright("Running")}`
+    : isCycleRunning
+      ? `${loadingSpinner[spinnerIndex]} ${chalk.yellowBright("Waiting for next cycle")}`
+      : chalk.green("Idle");
+  const statusText = `Status: ${status} | Active Account: ${walletInfo.activeAccount} | Total Accounts: ${keypairs.length} | Uploads per Account: ${uploadConfig.uploadCount} | Follow Tiktok : AirdropRefferal (Souiy1)`;
   try {
-    statusBox.setContent(statusContent);
+    statusBox.setContent(statusText);
   } catch (error) {
     addLog(`Status update error: ${error.message}`, "error");
   }
   if (isProcessing) {
-    // Blink border every few frames for active processes
-    if (blinkCounter % 2 === 0) { // Blink less frequently
+    if (blinkCounter % 1 === 0) {
       statusBox.style.border.fg = borderBlinkColors[borderBlinkIndex];
       borderBlinkIndex = (borderBlinkIndex + 1) % borderBlinkColors.length;
     }
     blinkCounter++;
   } else {
-    statusBox.style.border.fg = "cyan"; // Default color when idle
+    statusBox.style.border.fg = "cyan";
   }
   spinnerIndex = (spinnerIndex + 1) % loadingSpinner.length;
   safeRender();
@@ -855,12 +794,7 @@ async function updateWallets() {
   const separator = chalk.gray("-".repeat(30));
   try {
     walletBox.setItems([header, separator, ...walletData]);
-    // Pilih item yang sesuai dengan selectedWalletIndex, dengan offset 2 untuk header dan separator
-    if (selectedWalletIndex + 2 < walletBox.items.length) {
-      walletBox.select(selectedWalletIndex + 2);
-    } else {
-      walletBox.select(0); // Pilih yang pertama jika indeks di luar batas
-    }
+    walletBox.select(2 + selectedWalletIndex);
   } catch (error) {
     addLog(`Wallet update error: ${error.message}`, "error");
   }
@@ -869,11 +803,7 @@ async function updateWallets() {
 
 function updateLogs() {
   try {
-    // Pastikan logBox.add tidak dipanggil dengan argumen undefined
-    if (transactionLogs.length > 0) {
-      logBox.add(transactionLogs[transactionLogs.length - 1]);
-    }
-    logBox.scrollTo(logBox.getScrollHeight()); // Gulir ke bawah secara otomatis
+    logBox.add(transactionLogs[transactionLogs.length - 1] || chalk.gray("No logs available."));
     safeRender();
   } catch (error) {
     addLog(`Log update failed: ${error.message}`, "error");
@@ -886,31 +816,27 @@ function updateMenu() {
     : ["Start Auto Upload", "Set Manual Config", "Clear Logs", "Refresh", "Exit"];
   try {
     menuBox.setItems(menuItems);
-    menuBox.select(0); // Pilih item pertama secara default
+    menuBox.select(0);
   } catch (error) {
     addLog(`Menu update error: ${error.message}`, "error");
   }
   safeRender();
 }
 
-// --- Event Handlers ---
-
-// Scrolling logBox
-logBox.key(["up", "k"], () => {
+logBox.key(["up"], () => {
   if (screen.focused === logBox) {
     logBox.scroll(-1);
     safeRender();
   }
 });
 
-logBox.key(["down", "j"], () => {
+logBox.key(["down"], () => {
   if (screen.focused === logBox) {
     logBox.scroll(1);
     safeRender();
   }
 });
 
-// Focus logBox on click
 logBox.on("click", () => {
   screen.focusPush(logBox);
   logBox.style.border.fg = "yellow";
@@ -919,7 +845,6 @@ logBox.on("click", () => {
   safeRender();
 });
 
-// Revert logBox border on blur
 logBox.on("blur", () => {
   logBox.style.border.fg = "magenta";
   safeRender();
@@ -930,24 +855,24 @@ menuBox.on("select", async item => {
   switch (action) {
     case "Start Auto Upload":
       if (isCycleRunning) {
-        addLog("Cycle is already running. Stop the current cycle first.", "error");
+        addLog("Cycle is still running. Stop the current cycle first.", "error");
       } else {
         await autoUpload();
       }
       break;
     case "Stop Auto Upload":
-      if (activityRunning || isCycleRunning) {
-        shouldStop = true;
-        addLog("Stopping auto upload... Please wait for ongoing processes to complete.", "info");
-        // Jika ada cycleTimeout yang aktif, hapus agar tidak memulai siklus baru
-        if (cycleTimeout) {
-          clearTimeout(cycleTimeout);
-          cycleTimeout = null;
-          walletInfo.nextCycle = "N/A";
-        }
-        // Kondisi finally di autoUpload akan menangani reset activityRunning/isCycleRunning
-      } else {
-        addLog("Auto upload is not currently running.", "info");
+      shouldStop = true;
+      addLog("Stopping auto upload... Please wait for ongoing processes to complete.", "info");
+      if (cycleTimeout) {
+        clearTimeout(cycleTimeout);
+        cycleTimeout = null;
+        activityRunning = false;
+        isCycleRunning = false;
+        shouldStop = false;
+        addLog("Auto upload stopped successfully.", "success");
+        updateMenu();
+        updateStatus();
+        safeRender();
       }
       break;
     case "Set Manual Config":
@@ -956,9 +881,8 @@ menuBox.on("select", async item => {
       setTimeout(() => {
         if (uploadConfigSubMenu.visible) {
           screen.focusPush(uploadConfigSubMenu);
-          uploadConfigSubMenu.style.border.fg = "yellow"; // Highlight focused menu
-          menuBox.style.border.fg = "red"; // Revert main menu border
-          logBox.style.border.fg = "magenta"; // Revert log border
+          uploadConfigSubMenu.style.border.fg = "yellow";
+          logBox.style.border.fg = "magenta";
           safeRender();
         }
       }, 100);
@@ -967,13 +891,10 @@ menuBox.on("select", async item => {
       clearTransactionLogs();
       break;
     case "Refresh":
-      addLog("Refreshing data...", "info");
       await updateWallets();
-      updateStatus();
-      addLog("Data refreshed successfully.", "success");
+      addLog("Data refreshed.", "success");
       break;
     case "Exit":
-      addLog("Exiting application...", "info");
       clearInterval(statusInterval);
       if (cycleTimeout) {
         clearTimeout(cycleTimeout);
@@ -991,13 +912,11 @@ uploadConfigSubMenu.on("select", (item) => {
       configForm.configType = "uploadCount";
       configForm.setLabel(" Enter Upload Count ");
       configLabel.setContent("Upload Count (1-100):");
-      configInput.setValue(uploadConfig.uploadCount.toString()); // Pre-fill with current value
+      configInput.setValue(uploadConfig.uploadCount.toString());
       configForm.show();
       setTimeout(() => {
         if (configForm.visible) {
-          screen.focusPush(configInput); // Fokus ke input box
-          uploadConfigSubMenu.style.border.fg = "blue"; // Revert sub menu border
-          configForm.style.border.fg = "yellow"; // Highlight config form
+          screen.focusPush(configInput);
           safeRender();
         }
       }, 100);
@@ -1008,8 +927,9 @@ uploadConfigSubMenu.on("select", (item) => {
       setTimeout(() => {
         if (menuBox.visible) {
           screen.focusPush(menuBox);
-          menuBox.style.border.fg = "cyan"; // Highlight main menu
-          uploadConfigSubMenu.style.border.fg = "blue"; // Revert sub menu border
+          menuBox.style.border.fg = "cyan";
+          uploadConfigSubMenu.style.border.fg = "blue";
+          logBox.style.border.fg = "magenta";
           safeRender();
         }
       }, 100);
@@ -1024,8 +944,8 @@ configForm.on("submit", () => {
     value = parseInt(inputValue, 10);
     if (isNaN(value) || value < 1 || value > 100) {
       addLog("Invalid upload count. Please enter a number between 1 and 100.", "error");
-      configInput.setValue(""); // Clear invalid input
-      screen.focusPush(configInput); // Re-focus on input
+      configInput.setValue("");
+      screen.focusPush(configInput);
       safeRender();
       return;
     }
@@ -1040,8 +960,8 @@ configForm.on("submit", () => {
   if (configForm.configType === "uploadCount") {
     uploadConfig.uploadCount = value;
     addLog(`Upload Count set to ${uploadConfig.uploadCount}`, "success");
-    saveConfig(); // Simpan konfigurasi
-    updateStatus(); // Perbarui tampilan status
+    saveConfig();
+    updateStatus();
   }
 
   configForm.hide();
@@ -1049,19 +969,17 @@ configForm.on("submit", () => {
   setTimeout(() => {
     if (uploadConfigSubMenu.visible) {
       screen.focusPush(uploadConfigSubMenu);
-      uploadConfigSubMenu.style.border.fg = "yellow"; // Highlight sub menu
-      configForm.style.border.fg = "blue"; // Revert config form border
+      uploadConfigSubMenu.style.border.fg = "yellow";
+      logBox.style.border.fg = "magenta";
       safeRender();
     }
   }, 100);
 });
 
-// Submit configForm if enter is pressed in configInput
 configInput.on("submit", () => {
   configForm.submit();
 });
 
-// Submit configForm if submit button is pressed/clicked
 configSubmitButton.on("press", () => {
   configForm.submit();
 });
@@ -1070,7 +988,6 @@ configSubmitButton.on("click", () => {
   configForm.submit();
 });
 
-// Escape from configForm
 configForm.key(["escape"], () => {
   configForm.hide();
   uploadConfigSubMenu.show();
@@ -1078,35 +995,33 @@ configForm.key(["escape"], () => {
     if (uploadConfigSubMenu.visible) {
       screen.focusPush(uploadConfigSubMenu);
       uploadConfigSubMenu.style.border.fg = "yellow";
-      configForm.style.border.fg = "blue";
+      logBox.style.border.fg = "magenta";
       safeRender();
     }
   }, 100);
 });
 
-// Escape from uploadConfigSubMenu
 uploadConfigSubMenu.key(["escape"], () => {
   uploadConfigSubMenu.hide();
   menuBox.show();
   setTimeout(() => {
     if (menuBox.visible) {
       screen.focusPush(menuBox);
-      menuBox.style.border.fg = "cyan"; // Highlight main menu
-      uploadConfigSubMenu.style.border.fg = "blue"; // Revert sub menu border
+      menuBox.style.border.fg = "cyan";
+      uploadConfigSubMenu.style.border.fg = "blue";
+      logBox.style.border.fg = "magenta";
       safeRender();
     }
   }, 100);
 });
 
-// Interval untuk memperbarui status dan spinner
 const statusInterval = setInterval(() => {
   updateStatus();
   safeRender();
 }, 100);
 
-// Keybinds global untuk keluar
 screen.key(["escape", "q", "C-c"], () => {
-  addLog("Exiting application...", "info");
+  addLog("Exiting application", "info");
   clearInterval(statusInterval);
   if (cycleTimeout) {
     clearTimeout(cycleTimeout);
@@ -1115,32 +1030,27 @@ screen.key(["escape", "q", "C-c"], () => {
   process.exit(0);
 });
 
-// --- Inisialisasi Aplikasi ---
 async function initialize() {
   loadConfig();
   loadSeedPhrases();
   loadProxies();
   await updateWallets();
   updateStatus();
+  updateLogs();
   updateMenu();
-  adjustLayout(); // Atur layout awal
-
-  // Beri sedikit waktu sebelum menampilkan dan fokus ke menu
+  adjustLayout();
   setTimeout(() => {
     menuBox.show();
     menuBox.focus();
-    menuBox.select(0); // Pilih item pertama di menu
-    screen.render(); // Render akhir setelah semua diatur
+    menuBox.select(0);
+    screen.render();
   }, 100);
-
-  addLog("Tusky Auto Upload Bot started.", "info");
-  addLog("Please ensure you have created unencrypted vaults in your Tusky.io accounts.", "info");
+  safeRender();
 }
 
-// Atur ulang layout saat ukuran terminal berubah
 setTimeout(() => {
   adjustLayout();
   screen.on("resize", adjustLayout);
-}, 100); // Penundaan kecil untuk memastikan screen.width/height sudah tersedia
+}, 100);
 
 initialize();
